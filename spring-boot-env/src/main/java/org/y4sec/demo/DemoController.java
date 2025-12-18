@@ -40,7 +40,10 @@ public class DemoController {
             ois.close();
             return "ok";
         } catch (Exception ex) {
-            return ex.toString();
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            ex.printStackTrace(pw);
+            return sw.toString();
         }
     }
 }
